@@ -1,0 +1,1074 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Harmony Follow</title>
+<style>
+  /* Layout: one narrow column, built for a phone held in one hand in a dim rehearsal room. */
+  :root {
+    --bg: #f4f5f8;
+    --surface: #ffffff;
+    --surface-2: #eceef4;
+    --ink: #181b26;
+    --muted: #5f667a;
+    --line: #d9dce6;
+    --accent: #4b52d6;
+    --accent-ink: #ffffff;
+    --good: #12805c;
+    --warn: #a86400;
+    --bad: #b3322f;
+    --font: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #11131a;
+      --surface: #1a1e29;
+      --surface-2: #232837;
+      --ink: #eceff7;
+      --muted: #9aa2b8;
+      --line: #2e3446;
+      --accent: #8f98ff;
+      --accent-ink: #10122a;
+      --good: #4fd1a0;
+      --warn: #f0b24a;
+      --bad: #ff8782;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #11131a; --surface: #1a1e29; --surface-2: #232837; --ink: #eceff7; --muted: #9aa2b8;
+    --line: #2e3446; --accent: #8f98ff; --accent-ink: #10122a; --good: #4fd1a0; --warn: #f0b24a; --bad: #ff8782;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.45 var(--font);
+    padding-block: 20px 40px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    -webkit-text-size-adjust: 100%;
+  }
+  main { max-width: 30rem; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+  h1 { font-size: 1.6rem; line-height: 1.15; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+  h2 { font-size: 0.78rem; margin: 0 0 12px; text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); font-weight: 650; }
+  p { margin: 0; }
+  .lede { color: var(--muted); margin-top: 6px; text-wrap: pretty; }
+
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+  .stack { display: flex; flex-direction: column; gap: 12px; }
+
+  .pick { display: flex; flex-direction: column; gap: 6px; }
+  .pick label.name { font-weight: 600; }
+  .pick .hint { font-size: 0.86rem; color: var(--muted); }
+  .file {
+    display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 8px 12px;
+    background: var(--surface-2); border: 1px dashed var(--line); border-radius: 10px; cursor: pointer;
+  }
+  .file:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .file input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .file .btn-ish { font-weight: 600; color: var(--accent); white-space: nowrap; }
+  .file .fname { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .file.has .fname { color: var(--ink); }
+
+  .status-line { display: flex; align-items: center; gap: 8px; font-size: 0.92rem; color: var(--muted); min-height: 1.4em; }
+  .status-line.ok { color: var(--good); }
+  .status-line.err { color: var(--bad); }
+
+  button {
+    font: inherit; font-weight: 650; border: 0; border-radius: 12px; min-height: 52px; padding: 0 18px;
+    background: var(--accent); color: var(--accent-ink); cursor: pointer;
+  }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  button.quiet { background: var(--surface-2); color: var(--ink); border: 1px solid var(--line); }
+  button.small { min-height: 44px; min-width: 44px; padding: 0 12px; border-radius: 10px; }
+  button:focus-visible, input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .live { display: flex; flex-direction: column; gap: 14px; }
+  .chip { display: inline-flex; align-items: center; gap: 8px; font-weight: 650; font-size: 1.05rem; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+  .chip.searching .dot { background: var(--warn); animation: pulse 1.2s ease-in-out infinite; }
+  .chip.follow .dot { background: var(--good); }
+  .chip.lost .dot { background: var(--bad); }
+  @keyframes pulse { 50% { opacity: 0.25; } }
+  @media (prefers-reduced-motion: reduce) { .chip.searching .dot { animation: none; } }
+
+  .time { font-variant-numeric: tabular-nums; display: flex; justify-content: space-between; color: var(--muted); font-size: 0.9rem; }
+  .time strong { color: var(--ink); font-size: 1.5rem; font-weight: 650; letter-spacing: -0.01em; }
+  .bar { height: 8px; background: var(--surface-2); border-radius: 99px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 99px; transition: width 0.3s linear; }
+  .meter { height: 6px; background: var(--surface-2); border-radius: 99px; overflow: hidden; }
+  .meter > i { display: block; height: 100%; width: 0; background: var(--good); transition: width 0.3s; }
+  .meter-label { display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--muted); margin-bottom: 4px; }
+
+  .row { display: flex; align-items: center; gap: 10px; }
+  .row > .grow { flex: 1; min-width: 0; }
+  input[type="range"] { width: 100%; accent-color: var(--accent); height: 36px; }
+  .setting { display: flex; flex-direction: column; gap: 4px; }
+  .setting .top { display: flex; justify-content: space-between; align-items: baseline; font-weight: 600; }
+  .setting .val { font-variant-numeric: tabular-nums; color: var(--muted); font-weight: 500; }
+  .setting .hint { font-size: 0.84rem; color: var(--muted); }
+
+  details { color: var(--muted); font-size: 0.92rem; }
+  details summary { cursor: pointer; font-weight: 600; color: var(--ink); min-height: 32px; }
+  details ul { margin: 8px 0 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 6px; }
+  .debug { font-family: var(--mono); font-size: 0.7rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 1.2em; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Harmony Follow</h1>
+    <p class="lede">Listens to the room and plays your own part in your earbud, in step with the backing track.</p>
+  </header>
+
+  <section class="card stack" aria-labelledby="h-files">
+    <h2 id="h-files">1. Pick the song</h2>
+
+    <div class="pick">
+      <label class="name" for="partFile">Your harmony part</label>
+      <label class="file" id="partBox">
+        <input id="partFile" type="file" accept="audio/*,.mp3,.m4a,.wav">
+        <span class="btn-ish">Choose file</span>
+        <span class="fname" id="partName">No file chosen</span>
+      </label>
+    </div>
+
+    <div class="pick">
+      <label class="name" for="roomFile">Backing track <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+      <label class="file" id="roomBox">
+        <input id="roomFile" type="file" accept="audio/*,.mp3,.m4a,.wav">
+        <span class="btn-ish">Choose file</span>
+        <span class="fname" id="roomName">Same as your part</span>
+      </label>
+      <p class="hint">The track the leader plays. If you have it, matching is more reliable than using your part alone. It must be the same length as your part.</p>
+    </div>
+
+    <div class="status-line" id="prepStatus" role="status">Choose your part to begin.</div>
+  </section>
+
+  <section class="card stack" aria-labelledby="h-listen">
+    <h2 id="h-listen">2. Listen</h2>
+    <button id="startBtn" type="button" disabled>Start listening</button>
+    <button id="stopBtn" type="button" class="quiet" hidden>Stop</button>
+
+    <div class="live" id="live" hidden>
+      <div class="chip searching" id="chip" role="status" aria-live="polite"><span class="dot"></span><span id="chipText">Listening for the room track</span></div>
+      <div>
+        <div class="time"><strong id="posNow">0:00</strong><span id="posTotal">0:00</span></div>
+        <div class="bar" aria-hidden="true"><i id="posBar"></i></div>
+      </div>
+      <div>
+        <div class="meter-label"><span>Match strength</span><span id="healthNum">0%</span></div>
+        <div class="meter" aria-hidden="true"><i id="healthBar"></i></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card stack" aria-labelledby="h-tune">
+    <h2 id="h-tune">Tuning</h2>
+
+    <div class="setting">
+      <div class="top"><label for="lead">Earbud delay</label><span class="val" id="leadVal">150 ms</span></div>
+      <div class="row">
+        <button class="small quiet" id="leadDown" type="button" aria-label="Earlier by 10 milliseconds">&minus;</button>
+        <div class="grow"><input id="lead" type="range" min="-200" max="600" step="5" value="150"></div>
+        <button class="small quiet" id="leadUp" type="button" aria-label="Later by 10 milliseconds">+</button>
+      </div>
+      <p class="hint">Bluetooth earbuds delay sound. If your part sounds behind the room, raise this. If it is ahead, lower it.</p>
+    </div>
+
+    <div class="setting">
+      <div class="top"><label for="vol">Your part volume</label><span class="val" id="volVal">100%</span></div>
+      <input id="vol" type="range" min="0" max="100" step="1" value="100">
+    </div>
+
+    <p class="debug" id="debug" aria-hidden="true"></p>
+  </section>
+
+  <details class="card">
+    <summary>Tips</summary>
+    <ul>
+      <li>Press Start listening before the song begins. It usually locks on within a few seconds of the music starting.</li>
+      <li>Wear the earbud in one ear only, so you still hear the room and your own voice.</li>
+      <li>If it loses the thread, it quietens your part and finds its place again by itself.</li>
+      <li>Keep the screen on and this page in front. Phones stop listening when the screen locks.</li>
+      <li>If the song has several identical choruses, it may land in an earlier one. The backing sounds the same, so you will still be in step.</li>
+    </ul>
+  </details>
+</main>
+
+<script id="core-src" type="text/plain">/*
+ * Choir Sync engine.
+ *
+ * Listens to microphone audio and works out where in a known reference track
+ * the room is currently playing. Returns an offset (reference time minus
+ * microphone clock time) that the page uses to keep a second track in step.
+ *
+ * Method: log band-energy features (28 bands, 150-4500 Hz, 23 ms hop), matched
+ * with Pearson correlation over a multi-second window. Per-band means are
+ * removed from the microphone window, so room colour and volume do not matter.
+ */
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory();
+  else root.ChoirSync = factory();
+})(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  var SR = 11025;
+  var NFFT = 1024;
+  var HOP = 256;
+  var NB = 28;
+  var FMIN = 150;
+  var FMAX = 4500;
+  var EPS = 1e-7;
+
+  // ---------- FFT ----------
+  var cosT = new Float32Array(NFFT / 2);
+  var sinT = new Float32Array(NFFT / 2);
+  var rev = new Uint16Array(NFFT);
+  var hann = new Float32Array(NFFT);
+  (function init() {
+    var i;
+    for (i = 0; i < NFFT / 2; i++) {
+      cosT[i] = Math.cos((2 * Math.PI * i) / NFFT);
+      sinT[i] = -Math.sin((2 * Math.PI * i) / NFFT);
+    }
+    var bits = Math.log2(NFFT);
+    for (i = 0; i < NFFT; i++) {
+      var r = 0;
+      for (var b = 0; b < bits; b++) if (i & (1 << b)) r |= 1 << (bits - 1 - b);
+      rev[i] = r;
+    }
+    for (i = 0; i < NFFT; i++) hann[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (NFFT - 1));
+  })();
+
+  var re = new Float32Array(NFFT);
+  var im = new Float32Array(NFFT);
+
+  function fft() {
+    var n = NFFT, i, j, k, size, half, step, tr, ti, a, b;
+    for (i = 0; i < n; i++) {
+      j = rev[i];
+      if (j > i) {
+        tr = re[i]; re[i] = re[j]; re[j] = tr;
+        ti = im[i]; im[i] = im[j]; im[j] = ti;
+      }
+    }
+    for (size = 2; size <= n; size <<= 1) {
+      half = size >> 1;
+      step = n / size;
+      for (i = 0; i < n; i += size) {
+        for (j = i, k = 0; j < i + half; j++, k += step) {
+          a = j + half;
+          tr = re[a] * cosT[k] - im[a] * sinT[k];
+          ti = re[a] * sinT[k] + im[a] * cosT[k];
+          re[a] = re[j] - tr; im[a] = im[j] - ti;
+          re[j] += tr; im[j] += ti;
+        }
+      }
+    }
+  }
+
+  // ---------- Band layout (mel spaced) ----------
+  var bandLo = new Uint16Array(NB);
+  var bandHi = new Uint16Array(NB);
+  (function bands() {
+    function mel(f) { return 2595 * Math.log10(1 + f / 700); }
+    function inv(m) { return 700 * (Math.pow(10, m / 2595) - 1); }
+    var m0 = mel(FMIN), m1 = mel(FMAX);
+    for (var b = 0; b < NB; b++) {
+      var f0 = inv(m0 + ((m1 - m0) * b) / NB);
+      var f1 = inv(m0 + ((m1 - m0) * (b + 1)) / NB);
+      var lo = Math.max(1, Math.round((f0 * NFFT) / SR));
+      var hi = Math.max(lo + 1, Math.round((f1 * NFFT) / SR));
+      bandLo[b] = lo;
+      bandHi[b] = hi;
+    }
+  })();
+
+  /** Computes one feature row from x[start .. start+NFFT). Writes NB values to out at outOff.
+   *  Returns the mean log level (before per-frame normalisation). */
+  function frameFeatures(x, start, out, outOff) {
+    var i, b, k;
+    for (i = 0; i < NFFT; i++) { re[i] = x[start + i] * hann[i]; im[i] = 0; }
+    fft();
+    var mean = 0;
+    for (b = 0; b < NB; b++) {
+      var s = 0;
+      for (k = bandLo[b]; k < bandHi[b]; k++) s += re[k] * re[k] + im[k] * im[k];
+      s /= (bandHi[b] - bandLo[b]) * NFFT * NFFT / 4;
+      var v = Math.log(s + EPS);
+      out[outOff + b] = v;
+      mean += v;
+    }
+    mean /= NB;
+    for (b = 0; b < NB; b++) out[outOff + b] -= mean;
+    return mean;
+  }
+
+  /** Features for a whole track sampled at SR. */
+  function computeFeatures(x) {
+    var n = Math.max(0, Math.floor((x.length - NFFT) / HOP) + 1);
+    var data = new Float32Array(n * NB);
+    var level = new Float32Array(n);
+    for (var t = 0; t < n; t++) level[t] = frameFeatures(x, t * HOP, data, t * NB);
+    return { data: data, level: level, n: n };
+  }
+
+  function frameTime(a) { return (a * HOP + NFFT / 2) / SR; }
+
+  // ---------- Reference ----------
+  function Reference(feat) {
+    this.F = feat.data;
+    this.n = feat.n;
+    var n = this.n;
+    this.P1 = new Float64Array((n + 1) * NB);
+    this.P2 = new Float64Array((n + 1) * NB);
+    for (var t = 0; t < n; t++) {
+      for (var b = 0; b < NB; b++) {
+        var v = this.F[t * NB + b];
+        this.P1[(t + 1) * NB + b] = this.P1[t * NB + b] + v;
+        this.P2[(t + 1) * NB + b] = this.P2[t * NB + b] + v * v;
+      }
+    }
+  }
+
+  /** Correlation score for every start frame p in [lo, hi]. M is W*NB, zero mean per band. */
+  Reference.prototype.scores = function (M, W, normM, lo, hi) {
+    lo = Math.max(0, lo);
+    hi = Math.min(this.n - W, hi);
+    var count = hi - lo + 1;
+    var out = new Float32Array(Math.max(0, count));
+    if (count <= 0) return { lo: lo, out: out };
+    var F = this.F, P1 = this.P1, P2 = this.P2;
+    for (var p = lo; p <= hi; p++) {
+      var num = 0;
+      var fb = p * NB;
+      for (var i = 0, len = W * NB; i < len; i++) num += M[i] * F[fb + i];
+      var varF = 0;
+      var e = (p + W) * NB, s = p * NB;
+      for (var b = 0; b < NB; b++) {
+        var s1 = P1[e + b] - P1[s + b];
+        var s2 = P2[e + b] - P2[s + b];
+        varF += s2 - (s1 * s1) / W;
+      }
+      out[p - lo] = varF > 1e-9 ? num / (normM * Math.sqrt(varF)) : 0;
+    }
+    return { lo: lo, out: out };
+  };
+
+  /** Correlation score at one start frame, full resolution. Returns -2 if out of range. */
+  Reference.prototype.scoreAt = function (M, W, normM, p) {
+    if (p < 0 || p + W > this.n) return -2;
+    var F = this.F, P1 = this.P1, P2 = this.P2, num = 0, fb = p * NB;
+    for (var i = 0, len = W * NB; i < len; i++) num += M[i] * F[fb + i];
+    var varF = 0, e = (p + W) * NB, s = p * NB;
+    for (var b = 0; b < NB; b++) {
+      var s1 = P1[e + b] - P1[s + b];
+      varF += P2[e + b] - P2[s + b] - (s1 * s1) / W;
+    }
+    return varF > 1e-9 ? num / (normM * Math.sqrt(varF)) : 0;
+  };
+
+  /** Coarse scan (every 2nd position, every 2nd frame), then full-resolution refinement of the best peaks. */
+  Reference.prototype.candidates = function (M, W, normM, lo, hi, keep, gap) {
+    lo = Math.max(0, lo);
+    hi = Math.min(this.n - W, hi);
+    var F = this.F, P1 = this.P1, P2 = this.P2;
+    var coarse = [];
+    var p, t, b, i;
+    for (p = lo; p <= hi; p += 2) {
+      var num = 0, fb = p * NB;
+      for (t = 0; t < W; t += 2) {
+        var mo = t * NB, fo = fb + t * NB;
+        for (b = 0; b < NB; b++) num += M[mo + b] * F[fo + b];
+      }
+      num *= 2;
+      var varF = 0, e = (p + W) * NB, s = p * NB;
+      for (b = 0; b < NB; b++) {
+        var s1 = P1[e + b] - P1[s + b];
+        varF += P2[e + b] - P2[s + b] - (s1 * s1) / W;
+      }
+      coarse.push(varF > 1e-9 ? num / (normM * Math.sqrt(varF)) : 0);
+    }
+    // pick the top peaks, at least `gap` frames apart
+    var order = [];
+    for (i = 0; i < coarse.length; i++) order.push(i);
+    order.sort(function (a, c) { return coarse[c] - coarse[a]; });
+    var picked = [];
+    for (i = 0; i < order.length && picked.length < keep; i++) {
+      var pos = lo + order[i] * 2, ok = true;
+      for (var k = 0; k < picked.length; k++) if (Math.abs(picked[k] - pos) <= gap) { ok = false; break; }
+      if (ok) picked.push(pos);
+    }
+    // refine each at full resolution
+    var out = [];
+    for (i = 0; i < picked.length; i++) {
+      var best = -2, bp = picked[i], sc = {};
+      for (var q = picked[i] - 3; q <= picked[i] + 3; q++) {
+        var v = this.scoreAt(M, W, normM, q);
+        sc[q] = v;
+        if (v > best) { best = v; bp = q; }
+      }
+      var frac = 0, a = sc[bp - 1], c = sc[bp + 1];
+      if (a !== undefined && c !== undefined && a > -2 && c > -2) {
+        var d = a - 2 * best + c;
+        if (d < 0) frac = Math.max(-0.5, Math.min(0.5, (0.5 * (a - c)) / d));
+      }
+      out.push({ start: bp + frac, score: best });
+    }
+    return out;
+  };
+
+  /** Finds the best score and the best score at least `gap` frames away from it. */
+  function peaks(sc, gap) {
+    var o = sc.out, best = -2, bi = -1, i;
+    for (i = 0; i < o.length; i++) if (o[i] > best) { best = o[i]; bi = i; }
+    if (bi < 0) return null;
+    var second = -2;
+    for (i = 0; i < o.length; i++) if (Math.abs(i - bi) > gap && o[i] > second) second = o[i];
+    var frac = 0;
+    if (bi > 0 && bi < o.length - 1) {
+      var a = o[bi - 1], b = o[bi], c = o[bi + 1];
+      var d = a - 2 * b + c;
+      if (d < 0) frac = Math.max(-0.5, Math.min(0.5, (0.5 * (a - c)) / d));
+    }
+    return { start: sc.lo + bi + frac, score: best, second: second };
+  }
+
+  // ---------- Microphone stream ----------
+  function Stream(maxFrames) {
+    this.cap = maxFrames || 800;
+    this.F = new Float32Array(this.cap * NB);
+    this.L = new Float32Array(this.cap);
+    this.base = 0;      // absolute index of first stored frame
+    this.count = 0;     // frames stored
+    this.buf = new Float32Array(NFFT * 4);
+    this.bufLen = 0;
+    this.total = 0;     // total samples pushed
+  }
+
+  Stream.prototype.push = function (x) {
+    if (this.bufLen + x.length > this.buf.length) {
+      var nb = new Float32Array(Math.max(this.buf.length * 2, this.bufLen + x.length));
+      nb.set(this.buf.subarray(0, this.bufLen));
+      this.buf = nb;
+    }
+    this.buf.set(x, this.bufLen);
+    this.bufLen += x.length;
+    this.total += x.length;
+    while (this.bufLen >= NFFT) {
+      if (this.count === this.cap) {
+        var drop = this.cap >> 1;
+        this.F.copyWithin(0, drop * NB, this.cap * NB);
+        this.L.copyWithin(0, drop, this.cap);
+        this.base += drop;
+        this.count -= drop;
+      }
+      this.L[this.count] = frameFeatures(this.buf, 0, this.F, this.count * NB);
+      this.count++;
+      this.buf.copyWithin(0, HOP, this.bufLen);
+      this.bufLen -= HOP;
+    }
+  };
+
+  /** Last W frames, with the per-band mean removed. */
+  Stream.prototype.window = function (W) {
+    var M = new Float32Array(W * NB);
+    var s = (this.count - W) * NB;
+    var mean = new Float64Array(NB);
+    var i, b, t, lv = 0;
+    for (t = 0; t < W; t++) {
+      for (b = 0; b < NB; b++) mean[b] += this.F[s + t * NB + b];
+      lv += this.L[this.count - W + t];
+    }
+    for (b = 0; b < NB; b++) mean[b] /= W;
+    var ss = 0;
+    for (t = 0; t < W; t++) {
+      for (b = 0; b < NB; b++) {
+        var v = this.F[s + t * NB + b] - mean[b];
+        M[t * NB + b] = v;
+        ss += v * v;
+      }
+    }
+    return { M: M, norm: Math.sqrt(ss), level: lv / W, firstFrame: this.base + this.count - W };
+  };
+
+  // ---------- Tracker ----------
+  var DEFAULTS = {
+    minWindow: 2.0,       // seconds of audio before the first search
+    searchWindow: 10.0,   // longest window used when searching the whole track
+    trackWindow: 4.0,     // window used when following
+    trackRange: 1.0,      // seconds searched either side when following
+    verifyWindow: 12.0,   // window used for the periodic whole-track check while locked
+    verifyEvery: 7.0,     // seconds between those checks
+    verifyGain: 0.06,     // a different spot must beat the current one by this much to take over
+    lockScore: 0.38,
+    tieMargin: 0.03,      // scores this close are treated as the same, and the earliest wins
+    lockAgree: 0.08,      // seconds
+    trackMin: 0.24,
+    lostAfter: 6.0,       // seconds without a decent match
+    minLevel: -16,        // mean log power below this is treated as silence
+    medianOf: 5
+  };
+
+  function Tracker(refFeat, opts) {
+    this.ref = refFeat instanceof Reference ? refFeat : new Reference(refFeat);
+    this.o = Object.assign({}, DEFAULTS, opts || {});
+    this.stream = new Stream(Math.ceil((this.o.verifyWindow + 4) * SR / HOP));
+    this.reset();
+  }
+
+  Tracker.prototype.reset = function () {
+    this.state = 'searching';
+    this.prev = null;
+    this.agree = 0;
+    this.hist = [];
+    this.offset = null;
+    this.lastGood = null;
+    this.lastVerify = 0;
+    this.score = 0;
+    this.ema = 0;
+  };
+
+  Tracker.prototype.push = function (samples) { this.stream.push(samples); };
+  Tracker.prototype.micClock = function () { return this.stream.total / SR; };
+
+  function median(a) {
+    var s = a.slice().sort(function (x, y) { return x - y; });
+    return s[s.length >> 1];
+  }
+
+  /** Whole-track search with the tie rule. Returns {start, score} or null. */
+  Tracker.prototype._wholeSearch = function (w, W) {
+    var fps = SR / HOP;
+    var c = this.ref.candidates(w.M, W, w.norm, 0, this.ref.n - W, 8, Math.round(fps));
+    if (!c.length) return null;
+    var best = -2, i;
+    for (i = 0; i < c.length; i++) if (c[i].score > best) best = c[i].score;
+    var pick = null;
+    for (i = 0; i < c.length; i++) {
+      if (c[i].score >= best - this.o.tieMargin && (pick === null || c[i].start < pick.start)) pick = c[i];
+    }
+    return { start: pick.start, score: pick.score, best: best };
+  };
+
+  Tracker.prototype.update = function () {
+    var st = this.stream, o = this.o, ref = this.ref;
+    var info = { state: this.state, offset: this.offset, score: this.score };
+    var fps = SR / HOP;
+    var locked = this.state === 'locked';
+    var wantVerify = locked && this.micClock() - this.lastVerify >= o.verifyEvery;
+    var secs = wantVerify ? o.verifyWindow : (locked ? o.trackWindow : o.searchWindow);
+    var W = Math.min(st.count, Math.round(secs * fps));
+    if (W < Math.round(o.minWindow * fps)) return info;
+    var w = st.window(W);
+    if (w.level < o.minLevel || w.norm < 1e-6) {
+      info.quiet = true;
+      if (locked) { this.ema *= 0.6; this._miss(info); }
+      return info;
+    }
+    var lastFrame = w.firstFrame + W - 1;
+    var micT = frameTime(lastFrame);
+
+    if (locked) {
+      var expectedRef = micT + this.offset;
+      var p0 = Math.round((expectedRef * SR - NFFT / 2) / HOP) - (W - 1);
+      var r = Math.round(o.trackRange * fps);
+      var res = peaks(ref.scores(w.M, W, w.norm, p0 - r, p0 + r), Math.round(0.3 * fps));
+      if (wantVerify) {
+        this.lastVerify = this.micClock();
+        var alt = this._wholeSearch(w, W);
+        var cur = res ? res.score : -2;
+        if (alt) {
+          var altOff = frameTime(alt.start + W - 1) - micT;
+          if (Math.abs(altOff - this.offset) > 0.5 && alt.score > cur + o.verifyGain && alt.score >= o.lockScore) {
+            this.offset = altOff;
+            this.hist = [altOff];
+            this.lastGood = micT;
+            this.score = alt.score;
+            this.ema = alt.score;
+            info.state = 'locked'; info.offset = altOff; info.score = alt.score; info.micT = micT; info.relocked = true;
+            return info;
+          }
+        }
+      }
+      var sc = res ? res.score : 0;
+      this.ema = 0.6 * this.ema + 0.4 * sc;
+      info.health = this.ema;
+      if (!res || sc < o.trackMin || this.ema < o.trackMin) { this._miss(info, res); return info; }
+      var off = frameTime(res.start + W - 1) - micT;
+      this.hist.push(off);
+      if (this.hist.length > o.medianOf) this.hist.shift();
+      this.offset = median(this.hist);
+      this.lastGood = micT;
+      this.score = sc;
+      info.state = 'locked'; info.offset = this.offset; info.score = sc; info.micT = micT;
+      info.spread = Math.max.apply(null, this.hist) - Math.min.apply(null, this.hist);
+      return info;
+    }
+
+    // Searching: try a few window lengths. A short window copes with noise before the music starts,
+    // a long one copes with repeated passages. Each length has its own bar to clear.
+    var avail = st.count, lens = [], cands = [];
+    [3, 6, o.searchWindow].forEach(function (sec) {
+      var n = Math.min(avail, Math.round(sec * fps));
+      if (n >= Math.round(o.minWindow * fps) && lens.indexOf(n) < 0) lens.push(n);
+    });
+    var bestHit = null, self = this;
+    lens.forEach(function (n) {
+      var wk = n === W ? w : st.window(n);
+      var h = self._wholeSearch(wk, n);
+      if (!h) return;
+      var sec = n / fps;
+      var need = sec <= 3.5 ? o.lockScore + 0.12 : (sec <= 6.5 ? o.lockScore + 0.04 : o.lockScore);
+      var margin = h.score - need;
+      info.score = Math.max(info.score || 0, h.score);
+      if (margin >= 0 && (bestHit === null || margin > bestHit.margin)) {
+        bestHit = { start: h.start, score: h.score, margin: margin, n: n };
+      }
+    });
+    if (bestHit) {
+      var cand = frameTime(bestHit.start + bestHit.n - 1) - micT;
+      if (this.prev !== null && Math.abs(cand - this.prev) < o.lockAgree) this.agree++;
+      else this.agree = 1;
+      this.prev = cand;
+      if (this.agree >= 2) {
+        this.state = 'locked';
+        this.offset = cand;
+        this.hist = [cand];
+        this.lastGood = micT;
+        this.lastVerify = this.micClock();
+        this.score = bestHit.score;
+        this.ema = bestHit.score;
+        info.state = 'locked'; info.offset = cand; info.micT = micT; info.spread = 0; info.score = bestHit.score;
+      }
+    } else {
+      this.agree = 0;
+      this.prev = null;
+    }
+    return info;
+  };
+
+  Tracker.prototype._miss = function (info, res) {
+    if (this.lastGood !== null && this.micClock() - this.lastGood > this.o.lostAfter) {
+      this.reset();
+      info.state = 'searching'; info.offset = null; info.lost = true;
+    }
+    if (res) info.score = res.score;
+  };
+
+  return {
+    SR: SR, NFFT: NFFT, HOP: HOP, NB: NB,
+    computeFeatures: computeFeatures,
+    frameTime: frameTime,
+    Reference: Reference,
+    Stream: Stream,
+    Tracker: Tracker,
+    DEFAULTS: DEFAULTS
+  };
+});
+</script>
+<script>
+(function () {
+  'use strict';
+
+  var SR = 11025;
+  var $ = function (id) { return document.getElementById(id); };
+
+  var ctx = null, worker = null;
+  var partBuf = null, partDur = 0, roomDur = 0;
+  var refSamples = null, prepToken = 0, ready = false;
+  var listening = false, stream = null, micNode = null, proc = null, sink = null, wakeLock = null;
+  var master = null, harm = null;
+  var micTotal = 0, deltas = [], delta = 0, haveDelta = false;
+  var info = null, pendingUpdate = false, timer = null, lowSince = null;
+  var lead = 0.15, volume = 1;
+
+  // ---------- small helpers ----------
+  function fmt(t) {
+    t = Math.max(0, t);
+    var m = Math.floor(t / 60), s = Math.floor(t % 60);
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+  function setPrep(text, cls) {
+    var el = $('prepStatus');
+    el.textContent = text;
+    el.className = 'status-line' + (cls ? ' ' + cls : '');
+  }
+  function store(k, v) { try { localStorage.setItem(k, String(v)); } catch (e) { /* storage may be unavailable */ } }
+  function recall(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+
+  function ensureCtx() {
+    if (!ctx) {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      ctx = new AC();
+      master = ctx.createGain();
+      master.gain.value = volume;
+      master.connect(ctx.destination);
+    }
+    return ctx;
+  }
+
+  // ---------- engine worker ----------
+  function ensureWorker() {
+    if (worker) return worker;
+    var core = $('core-src').textContent;
+    var glue = [
+      core,
+      'var ref = null, tracker = null;',
+      'onmessage = function (e) {',
+      '  var m = e.data;',
+      '  if (m.type === "ref") {',
+      '    var feat = ChoirSync.computeFeatures(m.samples);',
+      '    ref = new ChoirSync.Reference(feat);',
+      '    postMessage({ type: "ready", token: m.token, frames: feat.n });',
+      '  } else if (m.type === "start") {',
+      '    tracker = new ChoirSync.Tracker(ref);',
+      '  } else if (m.type === "mic" && tracker) {',
+      '    tracker.push(m.samples);',
+      '  } else if (m.type === "update" && tracker) {',
+      '    var info = tracker.update();',
+      '    info.health = tracker.ema;',
+      '    info.micClock = tracker.micClock();',
+      '    postMessage({ type: "info", info: info });',
+      '  } else if (m.type === "stop") {',
+      '    tracker = null;',
+      '  }',
+      '};'
+    ].join('\n');
+    var url = URL.createObjectURL(new Blob([glue], { type: 'text/javascript' }));
+    worker = new Worker(url);
+    worker.onmessage = onWorker;
+    worker.onerror = function (e) { setPrep('The matching engine failed to start: ' + (e.message || 'unknown error'), 'err'); };
+    return worker;
+  }
+
+  function onWorker(e) {
+    var m = e.data;
+    if (m.type === 'ready') {
+      if (m.token !== prepToken) return;
+      ready = true;
+      setPrep('Ready. Analysed ' + fmt(refSamples.length / SR) + ' of audio.', 'ok');
+      $('startBtn').disabled = false;
+    } else if (m.type === 'info') {
+      pendingUpdate = false;
+      info = m.info;
+      render();
+    }
+  }
+
+  // ---------- loading and decoding ----------
+  function readFile(file) {
+    return new Promise(function (resolve, reject) {
+      var fr = new FileReader();
+      fr.onload = function () { resolve(fr.result); };
+      fr.onerror = function () { reject(fr.error || new Error('Could not read the file')); };
+      fr.readAsArrayBuffer(file);
+    });
+  }
+
+  function decode(arrayBuffer) {
+    var c = ensureCtx();
+    return new Promise(function (resolve, reject) {
+      var p = c.decodeAudioData(arrayBuffer, resolve, reject);
+      if (p && p.then) p.then(resolve, reject);
+    });
+  }
+
+  function toMono11k(buf) {
+    var OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    var off = new OAC(1, Math.ceil(buf.duration * SR), SR);
+    var src = off.createBufferSource();
+    src.buffer = buf;
+    src.connect(off.destination);
+    src.start(0);
+    return new Promise(function (resolve, reject) {
+      var p = off.startRendering();
+      if (p && p.then) p.then(resolve, reject);
+      else off.oncomplete = function (ev) { resolve(ev.renderedBuffer); };
+    }).then(function (rendered) { return rendered.getChannelData(0).slice(); });
+  }
+
+  async function prepare() {
+    var partFile = $('partFile').files[0];
+    var roomFile = $('roomFile').files[0];
+    if (!partFile) return;
+    var token = ++prepToken;
+    ready = false;
+    $('startBtn').disabled = true;
+    setPrep('Reading your files…');
+    try {
+      var partBuffer = await decode(await readFile(partFile));
+      if (token !== prepToken) return;
+      partBuf = partBuffer;
+      partDur = partBuf.duration;
+      var refBuffer = partBuf;
+      roomDur = partDur;
+      if (roomFile) {
+        refBuffer = await decode(await readFile(roomFile));
+        if (token !== prepToken) return;
+        roomDur = refBuffer.duration;
+      }
+      if (Math.abs(roomDur - partDur) > 0.75) {
+        setPrep('Those two files differ in length by ' + Math.abs(roomDur - partDur).toFixed(1) + ' s, so they will not line up. Check you picked the same song.', 'err');
+        return;
+      }
+      setPrep('Analysing the song…');
+      var mono = await toMono11k(refBuffer);
+      if (token !== prepToken) return;
+      refSamples = mono;
+      var n = mono.length;
+      refSamples = { length: n };
+      ensureWorker().postMessage({ type: 'ref', token: token, samples: mono }, [mono.buffer]);
+    } catch (err) {
+      setPrep('Could not read that audio file. Try an mp3, m4a or wav.', 'err');
+    }
+  }
+
+  function showName(inputId, nameId, boxId, empty) {
+    var f = $(inputId).files[0];
+    $(nameId).textContent = f ? f.name : empty;
+    $(boxId).classList.toggle('has', !!f);
+  }
+
+  $('partFile').addEventListener('change', function () { showName('partFile', 'partName', 'partBox', 'No file chosen'); prepare(); });
+  $('roomFile').addEventListener('change', function () { showName('roomFile', 'roomName', 'roomBox', 'Same as your part'); prepare(); });
+
+  // ---------- microphone ----------
+  function makeResampler(inRate, outRate) {
+    var ratio = inRate / outRate, buf = new Float32Array(0), t = 0;
+    return function (x) {
+      var nb = new Float32Array(buf.length + x.length);
+      nb.set(buf); nb.set(x, buf.length); buf = nb;
+      var out = [];
+      while (t + ratio <= buf.length) {
+        var a = t, b = t + ratio, sum = 0;
+        for (var i = Math.floor(a), end = Math.ceil(b); i < end; i++) {
+          sum += buf[i] * (Math.min(b, i + 1) - Math.max(a, i));
+        }
+        out.push(sum / ratio);
+        t += ratio;
+      }
+      var drop = Math.floor(t);
+      buf = buf.slice(drop);
+      t -= drop;
+      return Float32Array.from(out);
+    };
+  }
+
+  async function start() {
+    if (listening || !ready) return;
+    var c = ensureCtx();
+    try { await c.resume(); } catch (e) { /* resumed by the click anyway */ }
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 }
+      });
+    } catch (err) {
+      setPrep('Microphone access was blocked. Allow the microphone for this page and try again.', 'err');
+      return;
+    }
+    listening = true;
+    micTotal = 0; deltas = []; haveDelta = false; info = null; lowSince = null;
+    ensureWorker().postMessage({ type: 'start' });
+
+    micNode = c.createMediaStreamSource(stream);
+    proc = c.createScriptProcessor(4096, 1, 1);
+    sink = c.createGain();
+    sink.gain.value = 0;
+    var resample = makeResampler(c.sampleRate, SR);
+    proc.onaudioprocess = function (ev) {
+      var raw = ev.inputBuffer.getChannelData(0);
+      var out = resample(new Float32Array(raw));
+      if (!out.length) return;
+      micTotal += out.length;
+      var d = c.currentTime - micTotal / SR;
+      deltas.push(d);
+      if (deltas.length > 40) deltas.shift();
+      delta = Math.min.apply(null, deltas);
+      haveDelta = deltas.length >= 3;
+      worker.postMessage({ type: 'mic', samples: out }, [out.buffer]);
+    };
+    micNode.connect(proc);
+    proc.connect(sink);
+    sink.connect(c.destination);
+
+    try { if (navigator.wakeLock) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) { wakeLock = null; }
+
+    $('startBtn').hidden = true;
+    $('stopBtn').hidden = false;
+    $('live').hidden = false;
+    $('posTotal').textContent = fmt(partDur);
+    timer = setInterval(tick, 400);
+    render();
+  }
+
+  function stop() {
+    listening = false;
+    clearInterval(timer); timer = null;
+    stopHarmony();
+    try { if (proc) { proc.onaudioprocess = null; proc.disconnect(); } } catch (e) { /* already disconnected */ }
+    try { if (micNode) micNode.disconnect(); } catch (e) { /* already disconnected */ }
+    try { if (sink) sink.disconnect(); } catch (e) { /* already disconnected */ }
+    if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+    stream = micNode = proc = sink = null;
+    try { if (wakeLock) wakeLock.release(); } catch (e) { /* not held */ }
+    wakeLock = null;
+    if (worker) worker.postMessage({ type: 'stop' });
+    pendingUpdate = false;
+    info = null;
+    $('startBtn').hidden = false;
+    $('stopBtn').hidden = true;
+    $('live').hidden = true;
+  }
+
+  $('startBtn').addEventListener('click', start);
+  $('stopBtn').addEventListener('click', stop);
+
+  // ---------- following ----------
+  function roomPos(t) { return (t - delta) + info.offset; }
+
+  function actualPos(t) { return harm ? harm.anchorPos + (t - harm.anchorT) * harm.rate : 0; }
+
+  function startHarmony(pos) {
+    stopHarmony();
+    var t = ctx.currentTime;
+    var s = ctx.createBufferSource();
+    s.buffer = partBuf;
+    var g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(1, t + 0.05);
+    s.connect(g);
+    g.connect(master);
+    s.start(t, pos);
+    var h = { s: s, g: g, anchorT: t, anchorPos: pos, rate: 1 };
+    s.onended = function () { if (harm === h) harm = null; };
+    harm = h;
+  }
+
+  function stopHarmony() {
+    if (!harm) return;
+    var h = harm, t = ctx.currentTime;
+    harm = null;
+    try {
+      h.g.gain.cancelScheduledValues(t);
+      h.g.gain.setTargetAtTime(0, t, 0.015);
+      h.s.stop(t + 0.12);
+    } catch (e) { /* already stopped */ }
+  }
+
+  function setRate(r) {
+    var t = ctx.currentTime;
+    harm.anchorPos = actualPos(t);
+    harm.anchorT = t;
+    harm.rate = r;
+    harm.s.playbackRate.setValueAtTime(r, t);
+  }
+
+  function confident() {
+    return !!info && info.state === 'locked' && info.offset !== null && !info.quiet && (info.health || 0) >= 0.24;
+  }
+
+  function tick() {
+    if (!listening) return;
+    if (!pendingUpdate) { pendingUpdate = true; worker.postMessage({ type: 'update' }); }
+    control();
+  }
+
+  function control() {
+    var t = ctx.currentTime;
+    if (!info || info.state !== 'locked' || info.offset === null || !haveDelta) { stopHarmony(); lowSince = null; return; }
+    var target = roomPos(t) + lead;
+    if (target < 0 || target > partDur - 0.1) { stopHarmony(); return; }
+
+    if (!confident()) {
+      if (lowSince === null) lowSince = t;
+      if (harm) harm.g.gain.setTargetAtTime(0, t, 0.08);
+      if (t - lowSince > 3) stopHarmony();
+      return;
+    }
+    lowSince = null;
+    if (!harm) { startHarmony(target); return; }
+    harm.g.gain.setTargetAtTime(1, t, 0.08);
+    var err = target - actualPos(t);
+    if (Math.abs(err) > 0.15) { startHarmony(target); return; }
+    var r = 1;
+    if (Math.abs(err) > 0.012) r = 1 + Math.max(-0.006, Math.min(0.006, err * 0.2));
+    if (Math.abs(r - harm.rate) > 0.0005) setRate(r);
+  }
+
+  function render() {
+    if (!listening) return;
+    var chip = $('chip'), text = $('chipText');
+    var inStep = confident() && !!harm;
+    if (!info || info.state !== 'locked') {
+      chip.className = 'chip searching';
+      text.textContent = info && info.quiet ? 'Waiting for the music to start' : 'Listening for the room track';
+    } else if (inStep) {
+      chip.className = 'chip follow';
+      text.textContent = 'In step with the room';
+    } else if (confident()) {
+      chip.className = 'chip searching';
+      text.textContent = 'Locked on, starting your part';
+    } else {
+      chip.className = 'chip lost';
+      text.textContent = 'Lost the thread, finding it again';
+    }
+    var h = info ? Math.max(0, Math.min(1, ((info.health != null ? info.health : info.score) || 0) / 0.7)) : 0;
+    $('healthBar').style.width = Math.round(h * 100) + '%';
+    $('healthNum').textContent = Math.round(h * 100) + '%';
+    if (info && info.state === 'locked' && haveDelta) {
+      var p = roomPos(ctx.currentTime);
+      $('posNow').textContent = fmt(p);
+      $('posBar').style.width = Math.max(0, Math.min(100, (p / partDur) * 100)) + '%';
+    } else {
+      $('posNow').textContent = '0:00';
+      $('posBar').style.width = '0';
+    }
+    $('debug').textContent = info
+      ? 'score ' + (info.score || 0).toFixed(2) + ' · health ' + ((info.health || 0)).toFixed(2) +
+        (info.offset !== null && info.offset !== undefined ? ' · offset ' + info.offset.toFixed(3) + ' s' : '')
+      : '';
+  }
+  setInterval(function () { if (listening && info && info.state === 'locked') render(); }, 250);
+
+  // ---------- tuning ----------
+  function setLead(ms) {
+    ms = Math.max(-200, Math.min(600, Math.round(ms)));
+    lead = ms / 1000;
+    $('lead').value = ms;
+    $('leadVal').textContent = ms + ' ms';
+    store('hf-lead', ms);
+  }
+  function setVol(pct) {
+    volume = pct / 100;
+    $('vol').value = pct;
+    $('volVal').textContent = pct + '%';
+    if (master) master.gain.value = volume;
+    store('hf-vol', pct);
+  }
+  $('lead').addEventListener('input', function (e) { setLead(+e.target.value); });
+  $('leadDown').addEventListener('click', function () { setLead(+$('lead').value - 10); });
+  $('leadUp').addEventListener('click', function () { setLead(+$('lead').value + 10); });
+  $('vol').addEventListener('input', function (e) { setVol(+e.target.value); });
+  var savedLead = recall('hf-lead'), savedVol = recall('hf-vol');
+  setLead(savedLead !== null && savedLead !== '' && !isNaN(+savedLead) ? +savedLead : 150);
+  setVol(savedVol !== null && savedVol !== '' && !isNaN(+savedVol) ? +savedVol : 100);
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.isSecureContext) {
+    setPrep('This page needs a secure (https) connection to use the microphone. Open it from a web address that starts with https.', 'err');
+  }
+})();
+</script>
+</body>
+</html>
