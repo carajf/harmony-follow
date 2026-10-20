@@ -128,7 +128,7 @@
   .dock-actions { display: flex; gap: 8px; }
   .dock .dot.follow { background: var(--good); } .dock .dot.searching { background: var(--warn); } .dock .dot.lost { background: var(--bad); }
   .dock button.small { min-height: 40px; font-size: 0.86rem; padding: 0 10px; }
-  button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  button[aria-pressed="true"], button[aria-selected="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
   .seg { display: flex; gap: 6px; }
   .lyrics-text { --ly-size: 1.25rem; font-size: var(--ly-size); line-height: 1.45; text-align: center; }
   .lyrics-text .ly-title { font-size: 1.15em; font-weight: 700; margin: 0 0 4px; text-wrap: balance; }
@@ -249,14 +249,14 @@
   <section class="card stack" id="lyricsCard" aria-labelledby="h-lyrics" hidden>
     <div class="row" style="justify-content:space-between">
       <h2 id="h-lyrics" style="margin:0">Lyrics</h2>
-      <div class="seg" role="group" aria-label="Lyrics view">
-        <button class="small quiet" id="viewText" type="button" aria-pressed="true">Text</button>
-        <button class="small quiet" id="viewPdf" type="button" aria-pressed="false">PDF</button>
+      <div class="seg" role="tablist" aria-label="Lyrics view">
+        <button class="small quiet" id="viewPdf" type="button" role="tab" aria-selected="true">PDF</button>
+        <button class="small quiet" id="viewText" type="button" role="tab" aria-selected="false">Auto-scroll</button>
       </div>
     </div>
     <div class="status-line" id="lyricsStatus" role="status"></div>
 
-    <div id="textTools" class="stack" style="gap:10px">
+    <div id="textTools" class="stack" style="gap:10px" hidden>
       <div class="row">
         <button class="small quiet" id="sizeDown" type="button" aria-label="Smaller text">A&minus;</button>
         <button class="small quiet" id="sizeUp" type="button" aria-label="Larger text">A+</button>
@@ -284,12 +284,12 @@
       </details>
     </div>
 
-    <div id="lyricsText" class="lyrics-text"></div>
+    <div id="lyricsText" class="lyrics-text" hidden></div>
 
-    <div id="pdfTools" hidden>
+    <div id="pdfTools">
       <label class="row" style="gap:8px;font-size:0.9rem;color:var(--muted)"><input type="checkbox" id="darkPages"> Dark pages (easier in a dim room)</label>
     </div>
-    <div id="lyricsPages" hidden></div>
+    <div id="lyricsPages"></div>
   </section>
 
   <details class="card">
@@ -945,7 +945,7 @@
   $('roomFile').addEventListener('change', function () { showName('roomFile', 'roomName', 'roomBox', 'Same as your part'); prepare(); });
 
   // ---------- lyrics ----------
-  var pdfjsReady = null, lyricsToken = 0, lyricsPdf = null, pdfDrawn = false;
+  var pdfjsReady = null, lyricsToken = 0, lyricsPdf = null, pdfDrawn = false, pdfReadyForText = false, extracting = false;
   var ly = { rows: [], els: [], key: '', anchors: [], speed: 1, timing: 0, size: 1.25, follow: false, picking: false, view: 'text', now: -1 };
   var userScrollUntil = 0, scrollGoal = null, toastTimer = null;
 
@@ -1189,11 +1189,11 @@
 
   function setView(v) {
     ly.view = v;
-    $('viewText').setAttribute('aria-pressed', v === 'text' ? 'true' : 'false');
-    $('viewPdf').setAttribute('aria-pressed', v === 'pdf' ? 'true' : 'false');
+    $('viewText').setAttribute('aria-selected', v === 'text' ? 'true' : 'false');
+    $('viewPdf').setAttribute('aria-selected', v === 'pdf' ? 'true' : 'false');
     $('lyricsText').hidden = $('textTools').hidden = v !== 'text';
     $('lyricsPages').hidden = $('pdfTools').hidden = v !== 'pdf';
-    if (v === 'pdf') drawPdf();
+    if (v === 'pdf') { setFollow(false); scrollGoal = null; drawPdf(); }
   }
 
   async function drawPdf() {
@@ -1221,7 +1221,8 @@
     var token = ++lyricsToken;
     var card = $('lyricsCard');
     $('lyricsPages').innerHTML = ''; $('lyricsText').innerHTML = '';
-    lyricsPdf = null; pdfDrawn = false; ly.rows = []; ly.els = []; ly.now = -1; scrollGoal = null;
+    lyricsPdf = null; pdfDrawn = false; pdfReadyForText = false; ly.rows = []; ly.els = []; ly.now = -1; scrollGoal = null;
+    ly.view = 'pdf';
     setFollow(false);
     if (!file) { card.hidden = true; return; }
     card.hidden = false;
@@ -1233,11 +1234,8 @@
       lyricsPdf = pdf;
       ly.key = 'hf-ly:' + file.name + ':' + file.size;
       loadSongSettings();
-      var parsed = null;
-      try { parsed = await extractRows(pdf); } catch (e) { parsed = null; }
-      if (token !== lyricsToken) return;
-      if (parsed && parsed.rows.length >= 6) { buildText(parsed); setView('text'); }
-      else { setView('pdf'); setLyricsStatus('Could not pull the words out of this PDF, so here are the pages.'); return; }
+      pdfReadyForText = true;
+      setView('pdf');
       setLyricsStatus('');
     } catch (err) {
       setLyricsStatus(err && err.message && /PDF reader/.test(err.message) ? err.message : 'Could not open that PDF.', 'err');
@@ -1248,7 +1246,21 @@
     showName('lyricsFile', 'lyricsName', 'lyricsBox', 'No file chosen');
     showLyrics($('lyricsFile').files[0]);
   });
-  $('viewText').addEventListener('click', function () { if (ly.rows.length) setView('text'); });
+  $('viewText').addEventListener('click', async function () {
+    if (ly.rows.length) { setView('text'); return; }
+    if (!lyricsPdf || extracting) return;
+    extracting = true;
+    var token = lyricsToken;
+    setLyricsStatus('Reading the words…');
+    try {
+      var parsed = await extractRows(lyricsPdf);
+      if (token !== lyricsToken) return;
+      if (parsed && parsed.rows.length >= 6) { buildText(parsed); setView('text'); setLyricsStatus(''); }
+      else { setView('pdf'); setLyricsStatus('Could not pull the words out of this PDF. The PDF tab still works.', 'err'); }
+    } catch (e) {
+      if (token === lyricsToken) { setView('pdf'); setLyricsStatus('Could not pull the words out of this PDF. The PDF tab still works.', 'err'); }
+    } finally { extracting = false; }
+  });
   $('viewPdf').addEventListener('click', function () { setView('pdf'); });
   $('darkPages').addEventListener('change', function (e) {
     $('lyricsPages').classList.toggle('dark', e.target.checked);
@@ -1617,7 +1629,7 @@
     $('dockTime').textContent = $('posNow').textContent;
     $('dockHold').textContent = hold ? 'Unlock' : 'Lock in';
     $('dockHold').disabled = hb.disabled;
-    $('dockFollow').hidden = !ly.rows.length;
+    $('dockFollow').hidden = !ly.rows.length || ly.view !== 'text';
     $('debug').textContent = info
       ? 'mic ' + Math.round(micDb) + ' dB x' + Math.round(agcGain) + ' · score ' + (info.score || 0).toFixed(2) + ' · health ' + ((info.health || 0)).toFixed(2) +
         (info.offset !== null && info.offset !== undefined ? ' · offset ' + info.offset.toFixed(3) + ' s' : '')
