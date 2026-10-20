@@ -120,6 +120,30 @@
   details summary { cursor: pointer; font-weight: 600; color: var(--ink); min-height: 32px; }
   details ul { margin: 8px 0 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 6px; }
   .debug { font-family: var(--mono); font-size: 0.7rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 1.2em; }
+  .dock { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+          background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; box-shadow: 0 4px 14px rgba(0,0,0,0.12); }
+  .dock-main { display: flex; align-items: center; gap: 8px; min-width: 0; font-weight: 600; font-size: 0.92rem; }
+  .dock-main span#dockText { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dock-main strong { font-variant-numeric: tabular-nums; }
+  .dock-actions { display: flex; gap: 8px; }
+  .dock .dot.follow { background: var(--good); } .dock .dot.searching { background: var(--warn); } .dock .dot.lost { background: var(--bad); }
+  .dock button.small { min-height: 40px; font-size: 0.86rem; padding: 0 10px; }
+  button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .seg { display: flex; gap: 6px; }
+  .lyrics-text { --ly-size: 1.25rem; font-size: var(--ly-size); line-height: 1.45; text-align: center; }
+  .lyrics-text .ly-title { font-size: 1.15em; font-weight: 700; margin: 0 0 4px; text-wrap: balance; }
+  .lyrics-text details { text-align: left; font-size: 0.8rem; margin: 6px 0 10px; }
+  .ly-row { padding: 3px 8px; border-radius: 8px; border-left: 4px solid transparent; }
+  .ly-row.gap { margin-top: 1.1em; }
+  .ly-row.head { text-align: left; font-weight: 700; color: var(--muted); text-transform: none; font-size: 0.9em; padding-top: 6px; }
+  .ly-row.head.inst { text-align: center; }
+  .ly-row .part { font-weight: 700; color: var(--accent); }
+  .ly-row .brk { color: var(--muted); opacity: 0.55; }
+  .ly-row.anch { border-left-color: var(--good); }
+  .ly-row.now { background: var(--surface-2); outline: 2px solid var(--accent); outline-offset: -2px; }
+  .lyrics-text.picking .ly-row:not(.head) { cursor: pointer; }
+  .lyrics-text.picking .ly-row:not(.head):active { background: var(--surface-2); }
+  .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: max(20px, env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 99px; font-size: 0.9rem; z-index: 30; max-width: 90%; }
   #lyricsPages canvas { width: 100%; height: auto; display: block; background: #fff; border-radius: 6px; margin-bottom: 12px; }
   #lyricsPages.dark canvas { filter: invert(1) hue-rotate(180deg); }
   [hidden] { display: none !important; }
@@ -127,6 +151,13 @@
 </head>
 <body>
 <main>
+  <div class="dock" id="dock" hidden>
+    <div class="dock-main"><span class="dot" id="dockDot"></span><span id="dockText">Listening</span><strong id="dockTime">0:00</strong></div>
+    <div class="dock-actions">
+      <button class="small quiet" id="dockFollow" type="button" aria-pressed="false">Follow lyrics</button>
+      <button class="small quiet" id="dockHold" type="button" disabled>Lock in</button>
+    </div>
+  </div>
   <header>
     <h1>Harmony Follow</h1>
     <p class="lede">Listens to the room and plays your own part in your earbud, in step with the backing track.</p>
@@ -216,10 +247,49 @@
   </section>
 
   <section class="card stack" id="lyricsCard" aria-labelledby="h-lyrics" hidden>
-    <h2 id="h-lyrics" style="margin:0">Lyrics</h2>
+    <div class="row" style="justify-content:space-between">
+      <h2 id="h-lyrics" style="margin:0">Lyrics</h2>
+      <div class="seg" role="group" aria-label="Lyrics view">
+        <button class="small quiet" id="viewText" type="button" aria-pressed="true">Text</button>
+        <button class="small quiet" id="viewPdf" type="button" aria-pressed="false">PDF</button>
+      </div>
+    </div>
     <div class="status-line" id="lyricsStatus" role="status"></div>
-    <label class="row" style="gap:8px;font-size:0.9rem;color:var(--muted)"><input type="checkbox" id="darkPages"> Dark pages (easier in a dim room)</label>
-    <div id="lyricsPages"></div>
+
+    <div id="textTools" class="stack" style="gap:10px">
+      <div class="row">
+        <button class="small quiet" id="sizeDown" type="button" aria-label="Smaller text">A&minus;</button>
+        <button class="small quiet" id="sizeUp" type="button" aria-label="Larger text">A+</button>
+        <button class="small quiet grow" id="followBtn" type="button" aria-pressed="false">Follow the song</button>
+      </div>
+      <details>
+        <summary>Scrolling and sync points</summary>
+        <div class="stack" style="margin-top:10px;gap:12px">
+          <div class="setting">
+            <div class="top"><label for="lySpeed">Scroll speed</label><span class="val" id="lySpeedVal">1.0x</span></div>
+            <input id="lySpeed" type="range" min="0.5" max="2" step="0.05" value="1">
+            <p class="hint">Used until you set sync points, and between them. Raise it if the lyrics lag behind the song.</p>
+          </div>
+          <div class="setting">
+            <div class="top"><label for="lyTiming">Timing</label><span class="val" id="lyTimingVal">0 s</span></div>
+            <input id="lyTiming" type="range" min="-20" max="20" step="0.5" value="0">
+            <p class="hint">Shifts the lyrics earlier or later against the song.</p>
+          </div>
+          <div class="row">
+            <button class="small quiet grow" id="pickBtn" type="button" aria-pressed="false">Set sync points</button>
+            <button class="small quiet" id="clearPts" type="button" hidden>Clear</button>
+          </div>
+          <p class="hint" id="pickHint">Turn this on, then tap the line being sung right now. A few taps through the song make the scrolling accurate, and they are remembered for next time.</p>
+        </div>
+      </details>
+    </div>
+
+    <div id="lyricsText" class="lyrics-text"></div>
+
+    <div id="pdfTools" hidden>
+      <label class="row" style="gap:8px;font-size:0.9rem;color:var(--muted)"><input type="checkbox" id="darkPages"> Dark pages (easier in a dim room)</label>
+    </div>
+    <div id="lyricsPages" hidden></div>
   </section>
 
   <details class="card">
@@ -874,8 +944,10 @@
   $('partFile').addEventListener('change', function () { showName('partFile', 'partName', 'partBox', 'No file chosen'); prepare(); });
   $('roomFile').addEventListener('change', function () { showName('roomFile', 'roomName', 'roomBox', 'Same as your part'); prepare(); });
 
-  // ---------- lyrics (PDF drawn on the page) ----------
-  var pdfjsReady = null, lyricsToken = 0, lyricsPdf = null;
+  // ---------- lyrics ----------
+  var pdfjsReady = null, lyricsToken = 0, lyricsPdf = null, pdfDrawn = false;
+  var ly = { rows: [], els: [], key: '', anchors: [], speed: 1, timing: 0, size: 1.25, follow: false, picking: false, view: 'text', now: -1 };
+  var userScrollUntil = 0, scrollGoal = null, toastTimer = null;
 
   function loadPdfJs() {
     if (pdfjsReady) return pdfjsReady;
@@ -900,33 +972,272 @@
     el.hidden = !text;
   }
 
-  async function showLyrics(file) {
-    var token = ++lyricsToken;
-    var card = $('lyricsCard'), box = $('lyricsPages');
+  function toast(text) {
+    var el = document.getElementById('toast');
+    if (!el) { el = document.createElement('div'); el.id = 'toast'; el.className = 'toast'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
+    el.textContent = text;
+    el.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.hidden = true; }, 2200);
+  }
+
+  // Pulls the words out of the PDF on the phone: title, notes, section headings and lyric lines.
+  var HEAD_RE = /^\(?\s*(intro|verse|pre[ -]?chorus|chorus|bridge|middle ?8?|outro|instrumental|solo|link|tag|coda|hook|refrain|ending|spoken|breakdown|interlude|key change)\b/i;
+
+  async function extractRows(pdf) {
+    var lines = [];
+    for (var pn = 1; pn <= pdf.numPages; pn++) {
+      var page = await pdf.getPage(pn);
+      var vp = page.getViewport({ scale: 1 });
+      var tc = await page.getTextContent();
+      var items = [];
+      tc.items.forEach(function (it) {
+        if (!it.str || !it.str.trim()) return;
+        items.push({ s: it.str, x: it.transform[4], y: it.transform[5], w: it.width || 0, h: Math.abs(it.transform[3]) || it.height || 10 });
+      });
+      items.sort(function (a, b) { return (b.y - a.y) || (a.x - b.x); });
+      var cur = null, pageLines = [];
+      items.forEach(function (it) {
+        if (cur && Math.abs(cur.y - it.y) < 0.5 * Math.max(cur.h, it.h)) { cur.items.push(it); cur.h = Math.max(cur.h, it.h); }
+        else { cur = { y: it.y, h: it.h, items: [it], page: pn, pageH: vp.height, pageW: vp.width }; pageLines.push(cur); }
+      });
+      pageLines.forEach(function (ln) {
+        ln.items.sort(function (a, b) { return a.x - b.x; });
+        var text = '', prevEnd = null;
+        ln.items.forEach(function (it) {
+          if (prevEnd !== null && it.x - prevEnd > 0.12 * ln.h && !/\s$/.test(text) && !/^\s/.test(it.s)) text += ' ';
+          text += it.s;
+          prevEnd = it.x + it.w;
+        });
+        ln.text = text.replace(/\s+/g, ' ').trim();
+        ln.x0 = ln.items[0].x;
+        if (ln.text) lines.push(ln);
+      });
+    }
+    if (!lines.length) return { title: '', notes: '', rows: [] };
+    var hs = lines.map(function (l) { return l.h; }).sort(function (a, b) { return a - b; });
+    var medH = hs[hs.length >> 1];
+    // publisher and contact footers: small print at the foot of every page
+    lines = lines.filter(function (l) { return !(l.y < 0.085 * l.pageH && l.h < medH * 0.85); });
+    var gaps = [];
+    for (var i = 1; i < lines.length; i++) if (lines[i].page === lines[i - 1].page) gaps.push(lines[i - 1].y - lines[i].y);
+    gaps.sort(function (a, b) { return a - b; });
+    var pitch = gaps.length ? gaps[gaps.length >> 1] : medH * 1.4;
+
+    var rows = [], title = '', notes = [], seenHead = false;
+    lines.forEach(function (ln, k) {
+      var prev = k ? lines[k - 1] : null;
+      var gap = prev && prev.page === ln.page ? (prev.y - ln.y) > 1.55 * pitch : false;
+      var isHead = ln.text.length <= 32 && HEAD_RE.test(ln.text) && (ln.x0 < 0.2 * ln.pageW || /^\(/.test(ln.text));
+      if (isHead) {
+        seenHead = true;
+        rows.push({ text: ln.text, kind: 'head', gap: true, inst: /^\(/.test(ln.text) || ln.x0 >= 0.2 * ln.pageW });
+      } else if (!seenHead) {
+        if (!title) title = ln.text; else notes.push(ln.text);
+      } else {
+        rows.push({ text: ln.text, kind: 'line', gap: gap });
+      }
+    });
+    if (rows.length < 6) {
+      // no recognisable section headings: show everything after the first line
+      rows = lines.slice(1).map(function (ln, k) {
+        var prev = lines[k];
+        return { text: ln.text, kind: 'line', gap: prev.page === ln.page && (prev.y - ln.y) > 1.55 * pitch };
+      });
+      title = lines[0].text;
+      notes = [];
+    }
+    return { title: title, notes: notes.join(' '), rows: rows };
+  }
+
+  var PART_RE = /\(((?:all|alto?s?|l\.?\s?alto?s?|sop(?:rano)?s?|bass(?:es)?|tenors?|men|ladies|girls|boys|both)(?:\s*[\/&,]\s*(?:all|alto?s?|l\.?\s?alto?s?|sop(?:rano)?s?|bass(?:es)?|tenors?|men|ladies|girls|boys))*)\)|[ˇ̌]/gi;
+
+  function appendFormatted(el, text) {
+    var last = 0, m;
+    PART_RE.lastIndex = 0;
+    while ((m = PART_RE.exec(text))) {
+      if (m.index > last) el.appendChild(document.createTextNode(text.slice(last, m.index)));
+      var sp = document.createElement('span');
+      sp.className = m[1] ? 'part' : 'brk';
+      sp.textContent = m[0];
+      el.appendChild(sp);
+      last = m.index + m[0].length;
+    }
+    if (last < text.length) el.appendChild(document.createTextNode(text.slice(last)));
+  }
+
+  function buildText(parsed) {
+    var box = $('lyricsText');
     box.innerHTML = '';
-    lyricsPdf = null;
-    if (!file) { card.hidden = true; return; }
-    card.hidden = false;
-    setLyricsStatus('Opening the lyrics…');
+    ly.rows = parsed.rows; ly.els = []; ly.now = -1;
+    if (parsed.title) { var h = document.createElement('p'); h.className = 'ly-title'; h.textContent = parsed.title; box.appendChild(h); }
+    if (parsed.notes) {
+      var d = document.createElement('details');
+      var sm = document.createElement('summary'); sm.textContent = 'Notes from the arranger';
+      var np = document.createElement('p'); np.textContent = parsed.notes; np.style.margin = '6px 0 0';
+      d.appendChild(sm); d.appendChild(np); box.appendChild(d);
+    }
+    parsed.rows.forEach(function (r, i) {
+      var el = document.createElement('div');
+      el.className = 'ly-row' + (r.kind === 'head' ? ' head' + (r.inst ? ' inst' : '') : '') + (r.gap ? ' gap' : '');
+      el.setAttribute('data-i', i);
+      appendFormatted(el, r.text);
+      box.appendChild(el);
+      ly.els.push(el);
+    });
+    markAnchors();
+  }
+
+  // ---- per-song settings and sync points, kept on this phone ----
+  function loadSongSettings() {
+    ly.anchors = []; ly.speed = 1; ly.timing = 0;
     try {
-      var lib = await loadPdfJs();
-      var data = new Uint8Array(await readFile(file));
-      var pdf = await lib.getDocument({ data: data }).promise;
-      if (token !== lyricsToken) return;
-      lyricsPdf = pdf;
+      var raw = localStorage.getItem(ly.key);
+      if (raw) {
+        var o = JSON.parse(raw);
+        if (Array.isArray(o.anchors)) ly.anchors = o.anchors.filter(function (a) { return a && isFinite(a.line) && isFinite(a.t); });
+        if (isFinite(o.speed)) ly.speed = o.speed;
+        if (isFinite(o.timing)) ly.timing = o.timing;
+      }
+    } catch (e) { /* storage may be unavailable */ }
+    $('lySpeed').value = ly.speed; $('lySpeedVal').textContent = ly.speed.toFixed(2).replace(/0$/, '') + 'x';
+    $('lyTiming').value = ly.timing; $('lyTimingVal').textContent = ly.timing + ' s';
+  }
+  function saveSongSettings() {
+    try { localStorage.setItem(ly.key, JSON.stringify({ anchors: ly.anchors, speed: ly.speed, timing: ly.timing })); } catch (e) { /* ignore */ }
+  }
+  function markAnchors() {
+    ly.els.forEach(function (el) { el.classList.remove('anch'); });
+    ly.anchors.forEach(function (a) { if (ly.els[a.line]) ly.els[a.line].classList.add('anch'); });
+    var n = ly.anchors.length;
+    $('clearPts').hidden = !n;
+    $('clearPts').textContent = 'Clear (' + n + ')';
+    $('pickHint').textContent = n
+      ? n + ' sync point' + (n === 1 ? '' : 's') + ' saved for this song. Turn this on and tap more lines to improve the scrolling.'
+      : 'Turn this on, then tap the line being sung right now. A few taps through the song make the scrolling accurate, and they are remembered for next time.';
+  }
+
+  // Which row is being sung at song time t (fractional). Sync points win; otherwise a steady speed.
+  function lineAt(t) {
+    var N = ly.rows.length, A = ly.anchors, base = (N / Math.max(30, partDur)) * ly.speed;
+    t += ly.timing;
+    function clampL(v) { return Math.max(0, Math.min(N - 1, v)); }
+    if (!A.length) return clampL(t * base);
+    if (A.length === 1) return clampL(A[0].line + (t - A[0].t) * base);
+    function slope(i) {
+      var dt = A[i + 1].t - A[i].t, dl = A[i + 1].line - A[i].line;
+      return dt > 0.5 && dl > 0 ? dl / dt : base;
+    }
+    if (t <= A[0].t) return clampL(A[0].line + (t - A[0].t) * slope(0));
+    for (var i = 0; i < A.length - 1; i++) {
+      if (t <= A[i + 1].t) return clampL(A[i].line + (t - A[i].t) * slope(i));
+    }
+    var k = A.length - 2;
+    return clampL(A[k + 1].line + (t - A[k + 1].t) * slope(k));
+  }
+
+  // Where the song is right now, as the room hears it (not the earbud-delayed version).
+  function songPosNow() {
+    if (!listening || !ctx) return null;
+    var t = ctx.currentTime;
+    if (hold) return hold.paused ? hold.pausePos : holdPos(t);
+    if (info && info.state === 'locked' && info.offset !== null && haveDelta && confident()) return roomPos(t);
+    return null;
+  }
+
+  function rowTop(i) { return ly.els[i].getBoundingClientRect().top + window.pageYOffset; }
+
+  function lyricsTick() {
+    if (!ly.rows.length || $('lyricsCard').hidden || ly.view !== 'text' || !ly.follow) return;
+    var t = songPosNow();
+    if (t === null) return;
+    var L = lineAt(t), N = ly.rows.length;
+    var idx = Math.max(0, Math.min(N - 1, Math.round(L)));
+    if (idx !== ly.now) {
+      if (ly.els[ly.now]) ly.els[ly.now].classList.remove('now');
+      ly.now = idx;
+      ly.els[idx].classList.add('now');
+    }
+    var i0 = Math.max(0, Math.min(N - 1, Math.floor(L))), i1 = Math.min(N - 1, i0 + 1);
+    var y0 = rowTop(i0), y1 = rowTop(i1);
+    scrollGoal = y0 + (y1 - y0) * (L - i0) - $('dock').offsetHeight - window.innerHeight * 0.22;
+  }
+
+  function scrollLoop() {
+    if (scrollGoal !== null && ly.follow && Date.now() > userScrollUntil) {
+      var cur = window.pageYOffset, d = scrollGoal - cur;
+      if (Math.abs(d) > 1) window.scrollTo(0, cur + d * 0.12);
+    }
+    requestAnimationFrame(scrollLoop);
+  }
+  requestAnimationFrame(scrollLoop);
+
+  ['touchstart', 'wheel', 'mousedown', 'keydown'].forEach(function (ev) {
+    window.addEventListener(ev, function (e) {
+      if (e.target && e.target.closest && e.target.closest('button, input, summary, .dock')) return;
+      userScrollUntil = Date.now() + 6000;
+    }, { passive: true });
+  });
+
+  function setFollow(on) {
+    ly.follow = on;
+    userScrollUntil = 0;
+    $('followBtn').setAttribute('aria-pressed', on ? 'true' : 'false');
+    $('dockFollow').setAttribute('aria-pressed', on ? 'true' : 'false');
+    if (!on && ly.els[ly.now]) { ly.els[ly.now].classList.remove('now'); ly.now = -1; }
+  }
+
+  function setView(v) {
+    ly.view = v;
+    $('viewText').setAttribute('aria-pressed', v === 'text' ? 'true' : 'false');
+    $('viewPdf').setAttribute('aria-pressed', v === 'pdf' ? 'true' : 'false');
+    $('lyricsText').hidden = $('textTools').hidden = v !== 'text';
+    $('lyricsPages').hidden = $('pdfTools').hidden = v !== 'pdf';
+    if (v === 'pdf') drawPdf();
+  }
+
+  async function drawPdf() {
+    if (pdfDrawn || !lyricsPdf) return;
+    pdfDrawn = true;
+    var token = lyricsToken, pdf = lyricsPdf, box = $('lyricsPages');
+    try {
       var dpr = Math.min(window.devicePixelRatio || 1, 3);
+      var width = box.clientWidth || ($('lyricsCard').clientWidth - 34) || 340;
       for (var i = 1; i <= pdf.numPages; i++) {
         var page = await pdf.getPage(i);
         if (token !== lyricsToken) return;
         var natural = page.getViewport({ scale: 1 });
-        var scale = (box.clientWidth || 360) / natural.width;
-        var vp = page.getViewport({ scale: scale * dpr });
+        var vp = page.getViewport({ scale: (width / natural.width) * dpr });
         var canvas = document.createElement('canvas');
         canvas.width = Math.floor(vp.width);
         canvas.height = Math.floor(vp.height);
         box.appendChild(canvas);
         await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
       }
+    } catch (err) { setLyricsStatus('Could not draw the PDF pages.', 'err'); }
+  }
+
+  async function showLyrics(file) {
+    var token = ++lyricsToken;
+    var card = $('lyricsCard');
+    $('lyricsPages').innerHTML = ''; $('lyricsText').innerHTML = '';
+    lyricsPdf = null; pdfDrawn = false; ly.rows = []; ly.els = []; ly.now = -1; scrollGoal = null;
+    setFollow(false);
+    if (!file) { card.hidden = true; return; }
+    card.hidden = false;
+    setLyricsStatus('Opening the lyrics…');
+    try {
+      var lib = await loadPdfJs();
+      var pdf = await lib.getDocument({ data: new Uint8Array(await readFile(file)) }).promise;
+      if (token !== lyricsToken) return;
+      lyricsPdf = pdf;
+      ly.key = 'hf-ly:' + file.name + ':' + file.size;
+      loadSongSettings();
+      var parsed = null;
+      try { parsed = await extractRows(pdf); } catch (e) { parsed = null; }
+      if (token !== lyricsToken) return;
+      if (parsed && parsed.rows.length >= 6) { buildText(parsed); setView('text'); }
+      else { setView('pdf'); setLyricsStatus('Could not pull the words out of this PDF, so here are the pages.'); return; }
       setLyricsStatus('');
     } catch (err) {
       setLyricsStatus(err && err.message && /PDF reader/.test(err.message) ? err.message : 'Could not open that PDF.', 'err');
@@ -937,11 +1248,59 @@
     showName('lyricsFile', 'lyricsName', 'lyricsBox', 'No file chosen');
     showLyrics($('lyricsFile').files[0]);
   });
+  $('viewText').addEventListener('click', function () { if (ly.rows.length) setView('text'); });
+  $('viewPdf').addEventListener('click', function () { setView('pdf'); });
   $('darkPages').addEventListener('change', function (e) {
     $('lyricsPages').classList.toggle('dark', e.target.checked);
     store('hf-dark', e.target.checked ? 1 : 0);
   });
   if (recall('hf-dark') === '1') { $('darkPages').checked = true; $('lyricsPages').classList.add('dark'); }
+
+  function setSize(rem) {
+    ly.size = Math.max(0.9, Math.min(2.4, rem));
+    $('lyricsText').style.setProperty('--ly-size', ly.size + 'rem');
+    store('hf-lysize', ly.size);
+  }
+  var savedSize = parseFloat(recall('hf-lysize'));
+  setSize(isFinite(savedSize) ? savedSize : 1.25);
+  $('sizeDown').addEventListener('click', function () { setSize(ly.size - 0.1); });
+  $('sizeUp').addEventListener('click', function () { setSize(ly.size + 0.1); });
+
+  $('followBtn').addEventListener('click', function () { setFollow(!ly.follow); });
+  $('dockFollow').addEventListener('click', function () { setFollow(!ly.follow); });
+
+  $('lySpeed').addEventListener('input', function (e) {
+    ly.speed = +e.target.value;
+    $('lySpeedVal').textContent = ly.speed.toFixed(2).replace(/0$/, '') + 'x';
+    saveSongSettings();
+  });
+  $('lyTiming').addEventListener('input', function (e) {
+    ly.timing = +e.target.value;
+    $('lyTimingVal').textContent = ly.timing + ' s';
+    saveSongSettings();
+  });
+
+  $('pickBtn').addEventListener('click', function () {
+    ly.picking = !ly.picking;
+    $('pickBtn').setAttribute('aria-pressed', ly.picking ? 'true' : 'false');
+    $('lyricsText').classList.toggle('picking', ly.picking);
+  });
+  $('clearPts').addEventListener('click', function () { ly.anchors = []; saveSongSettings(); markAnchors(); toast('Sync points cleared'); });
+
+  $('lyricsText').addEventListener('click', function (e) {
+    if (!ly.picking) return;
+    var row = e.target.closest ? e.target.closest('.ly-row') : null;
+    if (!row || row.classList.contains('head')) return;
+    var t = songPosNow();
+    if (t === null) { toast('Wait until it says In step, then tap the line again.'); return; }
+    var line = +row.getAttribute('data-i');
+    ly.anchors = ly.anchors.filter(function (a) { return a.line !== line && Math.abs(a.t - t) > 1.5; });
+    ly.anchors.push({ line: line, t: Math.round(t * 10) / 10 });
+    ly.anchors.sort(function (a, b) { return a.t - b.t; });
+    saveSongSettings();
+    markAnchors();
+    toast('Synced to ' + fmt(t));
+  });
 
   // ---------- microphone ----------
   function makeResampler(inRate, outRate) {
@@ -1043,6 +1402,7 @@
     $('startBtn').hidden = false;
     $('stopBtn').hidden = true;
     $('live').hidden = true;
+    $('dock').hidden = true;
   }
 
   $('startBtn').addEventListener('click', start);
@@ -1194,7 +1554,9 @@
     render();
   }
 
-  $('holdBtn').addEventListener('click', function () { if (hold) unlock(); else lockIn(); });
+  function toggleHold() { if (hold) unlock(); else lockIn(); }
+  $('holdBtn').addEventListener('click', toggleHold);
+  $('dockHold').addEventListener('click', toggleHold);
 
   function render() {
     if (!listening) return;
@@ -1248,12 +1610,20 @@
         warn.textContent = 'The microphone is hearing almost nothing. Check this page is allowed to use the microphone, turn the speakers up, and move the phone closer.';
       }
     } else { silentSince = null; warn.hidden = true; }
+    var dockOn = listening;
+    $('dock').hidden = !dockOn;
+    $('dockDot').className = 'dot ' + chip.className.replace('chip ', '');
+    $('dockText').textContent = text.textContent;
+    $('dockTime').textContent = $('posNow').textContent;
+    $('dockHold').textContent = hold ? 'Unlock' : 'Lock in';
+    $('dockHold').disabled = hb.disabled;
+    $('dockFollow').hidden = !ly.rows.length;
     $('debug').textContent = info
       ? 'mic ' + Math.round(micDb) + ' dB x' + Math.round(agcGain) + ' · score ' + (info.score || 0).toFixed(2) + ' · health ' + ((info.health || 0)).toFixed(2) +
         (info.offset !== null && info.offset !== undefined ? ' · offset ' + info.offset.toFixed(3) + ' s' : '')
       : '';
   }
-  setInterval(function () { if (listening) render(); }, 250);
+  setInterval(function () { if (listening) { render(); lyricsTick(); } }, 250);
 
   // ---------- tuning ----------
   function setLead(ms) {
