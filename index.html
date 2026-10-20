@@ -167,6 +167,11 @@
         <div class="bar" aria-hidden="true"><i id="posBar"></i></div>
       </div>
       <div>
+        <div class="meter-label"><span>Microphone level</span><span id="micNum">-</span></div>
+        <div class="meter" aria-hidden="true"><i id="micBar" style="background:var(--accent)"></i></div>
+        <p class="hint" id="micWarn" hidden style="font-size:0.84rem;color:var(--bad);margin-top:6px"></p>
+      </div>
+      <div>
         <div class="meter-label"><span>Match strength</span><span id="healthNum">0%</span></div>
         <div class="meter" aria-hidden="true"><i id="healthBar"></i></div>
       </div>
@@ -692,6 +697,7 @@
   var master = null, harm = null;
   var micTotal = 0, deltas = [], delta = 0, haveDelta = false;
   var info = null, pendingUpdate = false, timer = null, lowSince = null;
+  var micDb = -120, agcEnv = 0, agcGain = 1, silentSince = null;
   var lead = 0.15, volume = 1;
 
   // ---------- small helpers ----------
@@ -733,7 +739,7 @@
       '    ref = new ChoirSync.Reference(feat);',
       '    postMessage({ type: "ready", token: m.token, frames: feat.n });',
       '  } else if (m.type === "start") {',
-      '    tracker = new ChoirSync.Tracker(ref);',
+      '    tracker = new ChoirSync.Tracker(ref, { minLevel: -80 });',
       '  } else if (m.type === "mic" && tracker) {',
       '    tracker.push(m.samples);',
       '  } else if (m.type === "update" && tracker) {',
@@ -880,6 +886,7 @@
     }
     listening = true;
     micTotal = 0; deltas = []; haveDelta = false; info = null; lowSince = null;
+    micDb = -120; agcEnv = 0; agcGain = 1; silentSince = null;
     ensureWorker().postMessage({ type: 'start' });
 
     micNode = c.createMediaStreamSource(stream);
@@ -889,8 +896,19 @@
     var resample = makeResampler(c.sampleRate, SR);
     proc.onaudioprocess = function (ev) {
       var raw = ev.inputBuffer.getChannelData(0);
+      var sq = 0;
+      for (var k = 0; k < raw.length; k++) sq += raw[k] * raw[k];
+      var rms = Math.sqrt(sq / raw.length);
+      micDb = rms > 1e-7 ? 20 * Math.log10(rms) : -120;
+      // Slow automatic gain: quiet pickup (a phone across the room) is brought up to a steady working level.
+      agcEnv += (rms - agcEnv) * (rms > agcEnv ? 0.3 : 0.02);
+      agcGain = Math.min(300, 0.05 / Math.max(agcEnv, 1e-5));
       var out = resample(new Float32Array(raw));
       if (!out.length) return;
+      for (var j = 0; j < out.length; j++) {
+        var v = out[j] * agcGain;
+        out[j] = v > 1 ? 1 : (v < -1 ? -1 : v);
+      }
       micTotal += out.length;
       var d = c.currentTime - micTotal / SR;
       deltas.push(d);
@@ -1013,7 +1031,7 @@
     var inStep = confident() && !!harm;
     if (!info || info.state !== 'locked') {
       chip.className = 'chip searching';
-      text.textContent = info && info.quiet ? 'Waiting for the music to start' : 'Listening for the room track';
+      text.textContent = 'Listening for the room track';
     } else if (inStep) {
       chip.className = 'chip follow';
       text.textContent = 'In step with the room';
@@ -1035,12 +1053,23 @@
       $('posNow').textContent = '0:00';
       $('posBar').style.width = '0';
     }
+    var mb = Math.max(0, Math.min(1, (micDb + 70) / 50));
+    $('micBar').style.width = Math.round(mb * 100) + '%';
+    $('micNum').textContent = micDb <= -119 ? 'silent' : Math.round(micDb) + ' dB';
+    var warn = $('micWarn');
+    if (micDb < -75) {
+      if (silentSince === null) silentSince = Date.now();
+      if (Date.now() - silentSince > 3000) {
+        warn.hidden = false;
+        warn.textContent = 'The microphone is hearing almost nothing. Check this page is allowed to use the microphone, turn the speakers up, and move the phone closer.';
+      }
+    } else { silentSince = null; warn.hidden = true; }
     $('debug').textContent = info
-      ? 'score ' + (info.score || 0).toFixed(2) + ' · health ' + ((info.health || 0)).toFixed(2) +
+      ? 'mic ' + Math.round(micDb) + ' dB x' + Math.round(agcGain) + ' · score ' + (info.score || 0).toFixed(2) + ' · health ' + ((info.health || 0)).toFixed(2) +
         (info.offset !== null && info.offset !== undefined ? ' · offset ' + info.offset.toFixed(3) + ' s' : '')
       : '';
   }
-  setInterval(function () { if (listening && info && info.state === 'locked') render(); }, 250);
+  setInterval(function () { if (listening) render(); }, 250);
 
   // ---------- tuning ----------
   function setLead(ms) {
