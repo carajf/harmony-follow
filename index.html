@@ -120,6 +120,8 @@
   details summary { cursor: pointer; font-weight: 600; color: var(--ink); min-height: 32px; }
   details ul { margin: 8px 0 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 6px; }
   .debug { font-family: var(--mono); font-size: 0.7rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 1.2em; }
+  #lyricsPages canvas { width: 100%; height: auto; display: block; background: #fff; border-radius: 6px; margin-bottom: 12px; }
+  #lyricsPages.dark canvas { filter: invert(1) hue-rotate(180deg); }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -150,6 +152,16 @@
         <span class="fname" id="roomName">Same as your part</span>
       </label>
       <p class="hint">The track the leader plays. If you have it, matching is more reliable than using your part alone. It must be the same length as your part.</p>
+    </div>
+
+    <div class="pick">
+      <label class="name" for="lyricsFile">Lyrics <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+      <label class="file" id="lyricsBox">
+        <input id="lyricsFile" type="file" accept="application/pdf,.pdf">
+        <span class="btn-ish">Choose file</span>
+        <span class="fname" id="lyricsName">No file chosen</span>
+      </label>
+      <p class="hint">A lyrics PDF. It opens at the bottom of this page, so you never have to leave.</p>
     </div>
 
     <div class="status-line" id="prepStatus" role="status">Choose your part to begin.</div>
@@ -201,6 +213,13 @@
     </div>
 
     <p class="debug" id="debug" aria-hidden="true"></p>
+  </section>
+
+  <section class="card stack" id="lyricsCard" aria-labelledby="h-lyrics" hidden>
+    <h2 id="h-lyrics" style="margin:0">Lyrics</h2>
+    <div class="status-line" id="lyricsStatus" role="status"></div>
+    <label class="row" style="gap:8px;font-size:0.9rem;color:var(--muted)"><input type="checkbox" id="darkPages"> Dark pages (easier in a dim room)</label>
+    <div id="lyricsPages"></div>
   </section>
 
   <details class="card">
@@ -854,6 +873,75 @@
 
   $('partFile').addEventListener('change', function () { showName('partFile', 'partName', 'partBox', 'No file chosen'); prepare(); });
   $('roomFile').addEventListener('change', function () { showName('roomFile', 'roomName', 'roomBox', 'Same as your part'); prepare(); });
+
+  // ---------- lyrics (PDF drawn on the page) ----------
+  var pdfjsReady = null, lyricsToken = 0, lyricsPdf = null;
+
+  function loadPdfJs() {
+    if (pdfjsReady) return pdfjsReady;
+    pdfjsReady = new Promise(function (resolve, reject) {
+      if (window.pdfjsLib) { resolve(window.pdfjsLib); return; }
+      var tag = document.createElement('script');
+      tag.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+      tag.onload = function () {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        resolve(window.pdfjsLib);
+      };
+      tag.onerror = function () { pdfjsReady = null; reject(new Error('Could not load the PDF reader. Check your connection and try again.')); };
+      document.head.appendChild(tag);
+    });
+    return pdfjsReady;
+  }
+
+  function setLyricsStatus(text, cls) {
+    var el = $('lyricsStatus');
+    el.textContent = text;
+    el.className = 'status-line' + (cls ? ' ' + cls : '');
+    el.hidden = !text;
+  }
+
+  async function showLyrics(file) {
+    var token = ++lyricsToken;
+    var card = $('lyricsCard'), box = $('lyricsPages');
+    box.innerHTML = '';
+    lyricsPdf = null;
+    if (!file) { card.hidden = true; return; }
+    card.hidden = false;
+    setLyricsStatus('Opening the lyrics…');
+    try {
+      var lib = await loadPdfJs();
+      var data = new Uint8Array(await readFile(file));
+      var pdf = await lib.getDocument({ data: data }).promise;
+      if (token !== lyricsToken) return;
+      lyricsPdf = pdf;
+      var dpr = Math.min(window.devicePixelRatio || 1, 3);
+      for (var i = 1; i <= pdf.numPages; i++) {
+        var page = await pdf.getPage(i);
+        if (token !== lyricsToken) return;
+        var natural = page.getViewport({ scale: 1 });
+        var scale = (box.clientWidth || 360) / natural.width;
+        var vp = page.getViewport({ scale: scale * dpr });
+        var canvas = document.createElement('canvas');
+        canvas.width = Math.floor(vp.width);
+        canvas.height = Math.floor(vp.height);
+        box.appendChild(canvas);
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+      }
+      setLyricsStatus('');
+    } catch (err) {
+      setLyricsStatus(err && err.message && /PDF reader/.test(err.message) ? err.message : 'Could not open that PDF.', 'err');
+    }
+  }
+
+  $('lyricsFile').addEventListener('change', function () {
+    showName('lyricsFile', 'lyricsName', 'lyricsBox', 'No file chosen');
+    showLyrics($('lyricsFile').files[0]);
+  });
+  $('darkPages').addEventListener('change', function (e) {
+    $('lyricsPages').classList.toggle('dark', e.target.checked);
+    store('hf-dark', e.target.checked ? 1 : 0);
+  });
+  if (recall('hf-dark') === '1') { $('darkPages').checked = true; $('lyricsPages').classList.add('dark'); }
 
   // ---------- microphone ----------
   function makeResampler(inRate, outRate) {
